@@ -12,7 +12,7 @@ PROJECT_ID = os.getenv("TILDA_PROJECT_ID")
 
 def upload_image_to_tilda(image_base64, filename="article.png"):
     """Загрузка картинки из base64"""
-    url = "https://api.tilda.cc/v1/uploadimage"
+    url = "https://**api.tildacdn.info**/v1/uploadimage"
     
     # Base64 → bytes
     image_data = base64.b64decode(image_base64)
@@ -27,7 +27,7 @@ def upload_image_to_tilda(image_base64, filename="article.png"):
 
 def create_tilda_article(title, content_html, image_url):
     """Создание статьи в Тильде"""
-    url = "https://api.tilda.cc/v1/postadd"
+    url = "https://**api.tildacdn.info**/v1/postadd"
     
     payload = {
         "publickey": TILDA_API_KEY,
@@ -67,4 +67,5 @@ def post_article():
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
+
     app.run(host='0.0.0.0', port=port)
