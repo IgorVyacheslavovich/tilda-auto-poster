@@ -12,7 +12,7 @@ PROJECT_ID = os.getenv("TILDA_PROJECT_ID")
 
 def upload_image_to_tilda(image_base64, filename="article.png"):
     """Загрузка картинки из base64"""
-    url = "https://**api.tildacdn.info**/v1/uploadimage"
+    url = "https://api.tildacdn.info/v1/uploadimage"
     
     # Base64 → bytes
     image_data = base64.b64decode(image_base64)
@@ -25,9 +25,9 @@ def upload_image_to_tilda(image_base64, filename="article.png"):
     
     return result["result"]["url"] if result.get("result") else None
 
-def create_tilda_article(title, content_html, image_url):
-    """Создание статьи в Тильде"""
-    url = "https://**api.tildacdn.info**/v1/postadd"
+def create_tilda_article(title, content_html, image_url, **kwargs):
+    """Полная статья с SEO"""
+    url = "https://api.tildacdn.info/v1/postadd"  # ✅ Правильный домен!
     
     payload = {
         "publickey": TILDA_API_KEY,
@@ -35,7 +35,15 @@ def create_tilda_article(title, content_html, image_url):
         "title": title,
         "content": content_html,
         "img": image_url,
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        "date": kwargs.get("date", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+        "author": kwargs.get("author", "Decorewood Team"),
+        # SEO поля
+        "seo_title": kwargs.get("seo_title", title[:60]),  # 60 символов
+        "seo_description": kwargs.get("seo_desc", content_html[:155]), 
+        "seo_keywords": kwargs.get("seo_keywords", "шпон,панели,отделка"),
+        # Дополнительно
+        "published": "1",  # Опубликовано сразу
+        "sort": "0"        # Сортировка
     }
     
     response = requests.post(url, json=payload)
@@ -69,3 +77,4 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
 
     app.run(host='0.0.0.0', port=port)
+
