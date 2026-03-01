@@ -10,24 +10,38 @@ app = Flask(__name__)
 TILDA_API_KEY = os.getenv("TILDA_API_KEY")
 PROJECT_ID = os.getenv("TILDA_PROJECT_ID")
 
-def upload_image_to_tilda(image_base64, filename="article.png"):
-    """Загрузка картинки из base64"""
+def download_google_drive(web_content_link):
+    """Скачать изображение из Google Drive WebContentLink"""
+    print(f"Downloading from Google Drive: {web_content_link}")
+    response = requests.get(web_content_link)
+    response.raise_for_status()
+    return response.content  # bytes изображения
+
+def upload_image_to_tilda_raw(image_bytes, filename="article.png"):
+    """Загрузка байтов изображения в Тильду"""
     url = "https://api.tildacdn.info/v1/uploadimage"
-    
-    # Base64 → bytes
-    image_data = base64.b64decode(image_base64)
-    
-    files = {"file": (filename, image_data, "image/png")}
+    files = {"file": (filename, image_bytes, "image/png")}
     data = {"publickey": TILDA_API_KEY, "projectid": PROJECT_ID}
     
+    print("Uploading to Tilda...")
     response = requests.post(url, files=files, data=data)
     result = response.json()
     
-    return result["result"]["url"] if result.get("result") else None
+    if result.get("result"):
+        print(f"Tilda image URL: {result['result']['url']}")
+        return result["result"]["url"]
+    else:
+        print(f"Tilda error: {result}")
+        return None
+
+def upload_image_to_tilda(image_base64, filename="article.png"):
+    """Загрузка из base64 (fallback)"""
+    image_data = base64.b64decode(image_base64)
+    return upload_image_to_tilda_raw(image_data, filename)
 
 def create_tilda_article(title, content_html, image_url, **kwargs):
-    """Полная статья с SEO"""
-    url = "https://api.tildacdn.info/v1/postadd"  # ✅ Правильный домен!
+    """Создание статьи в Тильде"""
+    url = "https://api.tildacdn.info/v1/postadd"
     
     payload = {
         "publickey": TILDA_API_KEY,
@@ -37,13 +51,11 @@ def create_tilda_article(title, content_html, image_url, **kwargs):
         "img": image_url,
         "date": kwargs.get("date", datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
         "author": kwargs.get("author", "Decorewood Team"),
-        # SEO поля
-        "seo_title": kwargs.get("seo_title", title[:60]),  # 60 символов
+        "seo_title": kwargs.get("seo_title", title[:60]),
         "seo_description": kwargs.get("seo_desc", content_html[:155]), 
         "seo_keywords": kwargs.get("seo_keywords", "шпон,панели,отделка"),
-        # Дополнительно
-        "published": "1",  # Опубликовано сразу
-        "sort": "0"        # Сортировка
+        "published": "1",
+        "sort": "0"
     }
     
     response = requests.post(url, json=payload)
@@ -51,27 +63,39 @@ def create_tilda_article(title, content_html, image_url, **kwargs):
 
 @app.route('/post-to-tilda', methods=['POST'])
 def post_article():
+    """Основной endpoint - Google Drive + base64"""
     data = request.json
     
-    # Из Make.com приходят данные
     title = data['title']
     content = data['content_html']
-    image_b64 = data['image_base64']  # из OpenAI Image
     
-    # 1. Загрузка картинки
-    image_url = upload_image_to_tilda(image_b64, "article.png")
+    # Проверяем image_url (Google Drive) или image_base64
+    image_url = data.get('image_url')
     
-    if not image_url:
-        return jsonify({"error": "Image upload failed"}), 400
+    if image_url and 'drive.google.com' in image_url:
+        # ✅ Google Drive WebContentLink
+        print("🔗 Using Google Drive image")
+        image_bytes = download_google_drive(image_url)
+        tilda_image_url = upload_image_to_tilda_raw(image_bytes)
+    else:
+        # Fallback base64
+        print("🖼️ Using base64 image")
+        image_b64 = data['image_base64']
+        tilda_image_url = upload_image_to_tilda(image_b64)
     
-    # 2. Создание статьи
-    result = create_tilda_article(title, content, image_url)
+    if not tilda_image_url:
+        return jsonify({"error": "❌ Image upload to Tilda failed"}), 400
+    
+    # Создаем статью
+    result = create_tilda_article(title, content, tilda_image_url)
     
     return jsonify({
         "success": True,
         "tilda_url": result.get("result", {}).get("url", ""),
-        "image_url": image_url
+        "image_url": tilda_image_url,
+        "debug": result  # Для отладки
     })
+
 
 @app.route('/ping', methods=['GET'])
 def ping():
@@ -81,5 +105,6 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
 
     app.run(host='0.0.0.0', port=port)
+
 
 
