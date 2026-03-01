@@ -20,31 +20,33 @@ def download_google_drive(web_content_link):
 
 
 def upload_image_to_tilda_raw(image_bytes, filename="article.png"):
-    """Загрузка байтов изображения в Тильду"""
-    url = "https://api.tildacdn.info/v1/uploadimage"
+    """Загрузка байтов в Тильду (publickey В URL!)"""
+    # ✅ publickey в URL-параметрах!
+    url = f"https://api.tildacdn.info/v1/uploadimage?publickey={TILDA_API_KEY}&projectid={PROJECT_ID}"
+    
     files = {"file": (filename, image_bytes, "image/png")}
-    data = {"publickey": TILDA_API_KEY, "projectid": PROJECT_ID}
-
+    
     print("[TILDA] uploadimage...")
-    resp = requests.post(url, files=files, data=data)
-    print(f"[TILDA] Status: {resp.status_code}, text: {resp.text}")
-
+    response = requests.post(url, files=files)  # Без data!
+    print(f"[TILDA] Status: {response.status_code}")
+    print(f"[TILDA] Response: {response.text}")
+    
     try:
-        result = resp.json()
-    except Exception as e:
-        print("[TILDA] JSON error:", e)
-        return None
-
-    if result.get("status") == "FOUND" and result.get("result"):
-        return result["result"]["url"]
-
+        result = response.json()
+        if result.get("status") == "FOUND" and result.get("result"):
+            return result["result"]["url"]
+        else:
+            print(f"[TILDA] Error in result: {result}")
+    except:
+        print("[TILDA] JSON parse error")
+    
     return None
 
 def upload_image_to_tilda(image_base64, filename="article.png"):
-    """Загрузка из base64 (fallback)"""
+    """Base64 → Тильда"""
     image_data = base64.b64decode(image_base64)
     return upload_image_to_tilda_raw(image_data, filename)
-
+    
 def create_tilda_article(title, content_html, image_url, **kwargs):
     """Создание статьи в Тильде"""
     url = "https://api.tildacdn.info/v1/postadd"
@@ -108,6 +110,7 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
 
     app.run(host='0.0.0.0', port=port)
+
 
 
 
