@@ -11,28 +11,34 @@ TILDA_API_KEY = os.getenv("TILDA_API_KEY")
 PROJECT_ID = os.getenv("TILDA_PROJECT_ID")
 
 def download_google_drive(web_content_link):
-    """Скачать изображение из Google Drive WebContentLink"""
-    print(f"Downloading from Google Drive: {web_content_link}")
-    response = requests.get(web_content_link)
-    response.raise_for_status()
-    return response.content  # bytes изображения
+    """Скачать файл по WebContentLink (Google Drive, публичный)"""
+    print(f"[GD] GET {web_content_link}")
+    resp = requests.get(web_content_link)
+    print(f"[GD] Status: {resp.status_code}, content-type: {resp.headers.get('Content-Type')}")
+    resp.raise_for_status()
+    return resp.content  # bytes
+
 
 def upload_image_to_tilda_raw(image_bytes, filename="article.png"):
     """Загрузка байтов изображения в Тильду"""
     url = "https://api.tildacdn.info/v1/uploadimage"
     files = {"file": (filename, image_bytes, "image/png")}
     data = {"publickey": TILDA_API_KEY, "projectid": PROJECT_ID}
-    
-    print("Uploading to Tilda...")
-    response = requests.post(url, files=files, data=data)
-    result = response.json()
-    
-    if result.get("result"):
-        print(f"Tilda image URL: {result['result']['url']}")
-        return result["result"]["url"]
-    else:
-        print(f"Tilda error: {result}")
+
+    print("[TILDA] uploadimage...")
+    resp = requests.post(url, files=files, data=data)
+    print(f"[TILDA] Status: {resp.status_code}, text: {resp.text}")
+
+    try:
+        result = resp.json()
+    except Exception as e:
+        print("[TILDA] JSON error:", e)
         return None
+
+    if result.get("status") == "FOUND" and result.get("result"):
+        return result["result"]["url"]
+
+    return None
 
 def upload_image_to_tilda(image_base64, filename="article.png"):
     """Загрузка из base64 (fallback)"""
@@ -69,16 +75,13 @@ def post_article():
     title = data['title']
     content = data['content_html']
     
-    # Проверяем image_url (Google Drive) или image_base64
     image_url = data.get('image_url')
-    
-    if image_url and 'drive.google.com' in image_url:
-        # ✅ Google Drive WebContentLink
-        print("🔗 Using Google Drive image")
+
+    if image_url:
+        print("🔗 Using image_url:", image_url)
         image_bytes = download_google_drive(image_url)
         tilda_image_url = upload_image_to_tilda_raw(image_bytes)
     else:
-        # Fallback base64
         print("🖼️ Using base64 image")
         image_b64 = data['image_base64']
         tilda_image_url = upload_image_to_tilda(image_b64)
@@ -105,6 +108,7 @@ if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
 
     app.run(host='0.0.0.0', port=port)
+
 
 
 
