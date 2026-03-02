@@ -56,32 +56,47 @@ def create_tilda_article(title, content_html, image_url, author="Bot", seo_title
 @app.route('/post-with-binary', methods=['POST'])
 def post_with_binary():
     """Make.com multipart → Cloudinary → Tilda"""
+    
+    # Динамические данные из Make.com
     title = request.form.get('title', 'Test Post')
     content_html = request.form.get('content_html', '<h1>Test</h1>')
-    author = request.form.get('author', 'Bot')
+    author = request.form.get('author', 'Decorewood Bot')
     seo_title = request.form.get('seo_title')
     
-    if 'image' not in request.files:
-        return jsonify({"error": "Missing image file"}), 400
+    print(f"📝 Title: {title[:50]}...")
     
-    image_file = request.files['image']
-    if image_file.filename == '':
-        return jsonify({"error": "Empty image file"}), 400
-        
+    # Поиск файла (любое имя из Make.com)
+    image_file = None
+    for uploaded_file in request.files.values():
+        if uploaded_file and uploaded_file.filename:
+            image_file = uploaded_file
+            print(f"📁 File: {uploaded_file.filename} ({len(uploaded_file.read())} bytes)")
+            uploaded_file.seek(0)  # Reset для чтения
+            break
+    
+    if not image_file:
+        print("Files keys:", list(request.files.keys()))
+        return jsonify({"error": "No image file found"}), 400
+    
     image_bytes = image_file.read()
-    print(f"📏 Image size: {len(image_bytes)} bytes")
+    print(f"📏 Final size: {len(image_bytes)} bytes")
     
     try:
-        cloudinary_url = upload_to_cloudinary(image_bytes)
+        # Cloudinary оптимизация
+        cloudinary_url = upload_to_cloudinary(image_bytes, public_id=f"tilda-{int(datetime.now().timestamp())}")
+        
+        # Tilda пост
         result = create_tilda_article(title, content_html, cloudinary_url, author, seo_title)
         
         return jsonify({
             "success": True,
             "tilda_url": result.get("result", {}).get("url", ""),
-            "image_cdn": cloudinary_url
+            "image_cdn": cloudinary_url,
+            "title_used": title
         })
+        
     except Exception as e:
-        print(f"ERROR: {e}")
+        print(f"❌ ERROR: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/ping', methods=['GET'])
@@ -95,3 +110,4 @@ def ping():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
+
