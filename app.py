@@ -21,13 +21,13 @@ TILDA_SECRET_KEY = os.getenv("TILDA_SECRET_KEY")
 TILDA_PROJECT_ID = os.getenv("TILDA_PROJECT_ID")
 
 def upload_to_cloudinary(image_bytes, public_id="article"):
-    """Binary → Cloudinary URL"""
+    """Binary → Cloudinary (фикс format auto)"""
+    # Убираем format="auto" — Cloudinary сам определит
     result = cloudinary.uploader.upload(
-        image_bytes, 
+        image_bytes,
         folder="tilda_posts",
         public_id=public_id,
-        format="auto",
-        quality="auto"
+        quality="auto"  # Только качество
     )
     print(f"☁️ Cloudinary: {result['secure_url']}")
     return result['secure_url']
@@ -110,4 +110,5 @@ def ping():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
+
 
