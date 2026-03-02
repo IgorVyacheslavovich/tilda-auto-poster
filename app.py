@@ -30,29 +30,29 @@ def upload_to_cloudinary(image_bytes, public_id="article"):
     )
     return result['secure_url']
 
-@app.route('/post-to-tilda', methods=['POST'])
-def post_article():
-    data = request.json
+@app.route('/post-with-binary', methods=['POST'])
+def post_with_binary():
+    # Все text поля
+    title = request.form['title']
+    content_html = request.form['content_html']
+    author = request.form.get('author', 'Bot')
+    seo_title = request.form.get('seo_title')
     
-    title = data['title']
-    content = data['content_html']
-    image_b64 = data['image_base64']  # Из OpenAI!
+    # Binary файл
+    image_file = request.files['image']
+    image_bytes = image_file.read()
     
-    # 1. Base64 → Cloudinary
-    print("☁️ Uploading to Cloudinary...")
-    image_bytes = base64.b64decode(image_b64)
+    # Cloudinary
     cloudinary_url = upload_to_cloudinary(image_bytes)
-    print(f"☁️ CDN: {cloudinary_url}")
     
-    # 2. Cloudinary → Тильда postadd
-    result = create_tilda_article(title, content, cloudinary_url)
+    # Tilda (с SEO)
+    result = create_tilda_article(
+        title, content_html, cloudinary_url,
+        author=author, seo_title=seo_title
+    )
     
-    return jsonify({
-        "success": True,
-        "tilda_url": result.get("result", {}).get("url", ""),
-        "image_cdn": cloudinary_url
-    })
-
+    return jsonify({"success": True, "tilda_url": result["result"]["url"]})
+    
 def create_tilda_article(title, content_html, image_url):
     """Тильда postadd"""
     url = f"https://api.tildacdn.info/v1/postadd?publickey={TILDA_PUBLIC_KEY}&secretkey={TILDA_SECRET_KEY}"
@@ -74,3 +74,4 @@ def ping():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
