@@ -1,64 +1,34 @@
+import cloudinary
+import cloudinary.uploader
 from flask import Flask, request, jsonify
 import requests
 import os
 from datetime import datetime
-import base64
 
 app = Flask(__name__)
 
-# ✅ Тильда ключи
+# Cloudinary
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET")
+)
+
+# Тильда
 TILDA_PUBLIC_KEY = os.getenv("TILDA_PUBLIC_KEY")
 TILDA_SECRET_KEY = os.getenv("TILDA_SECRET_KEY")
 TILDA_PROJECT_ID = os.getenv("TILDA_PROJECT_ID")
 
-def download_google_drive(web_content_link):
-    print(f"[GD] GET {web_content_link}")
-    resp = requests.get(web_content_link)
-    print(f"[GD] Status: {resp.status_code}, content-type: {resp.headers.get('Content-Type')}")
-    resp.raise_for_status()
-    return resp.content
-
-def upload_image_to_tilda_raw(image_bytes, filename="article.png"):
-    """Загрузка в Тильду с publickey + secretkey"""
-    url = ("https://api.tildacdn.info/v1/uploadimage?"
-           f"publickey={TILDA_PUBLIC_KEY}&"
-           f"secretkey={TILDA_SECRET_KEY}&"
-           f"projectid={TILDA_PROJECT_ID}")
-    
-    files = {"file": (filename, image_bytes, "image/png")}
-    
-    print("[TILDA] POST uploadimage...")
-    resp = requests.post(url, files=files)
-    print(f"[TILDA] Status: {resp.status_code}")
-    print(f"[TILDA] Response: {resp.text[:500]}")
-    
-    try:
-        result = resp.json()
-        if result.get("status") == "FOUND":
-            return result["result"]["url"]
-    except:
-        pass
-    
-    return None
-
-def upload_image_to_tilda(image_base64, filename="article.png"):
-    image_data = base64.b64decode(image_base64)
-    return upload_image_to_tilda_raw(image_data, filename)
-
-def create_tilda_article(title, content_html, image_url):
-    url = f"https://api.tildacdn.info/v1/postadd?publickey={TILDA_PUBLIC_KEY}&secretkey={TILDA_SECRET_KEY}"
-    
-    payload = {
-        "projectid": TILDA_PROJECT_ID,
-        "title": title,
-        "content": content_html,
-        "img": image_url,
-        "published": "1"
-    }
-    
-    resp = requests.post(url, json=payload)
-    print(f"[POSTADD] Status: {resp.status_code}, Response: {resp.text[:300]}")
-    return resp.json()
+def upload_to_cloudinary(image_bytes, public_id="article"):
+    """OpenAI bytes → Cloudinary CDN URL"""
+    result = cloudinary.uploader.upload(
+        image_bytes, 
+        folder="tilda_posts",
+        public_id=public_id,
+        format="auto",  # webp/avif
+        quality="auto"
+    )
+    return result['secure_url']
 
 @app.route('/post-to-tilda', methods=['POST'])
 def post_article():
@@ -66,32 +36,41 @@ def post_article():
     
     title = data['title']
     content = data['content_html']
-    image_url = data.get('image_url')
+    image_b64 = data['image_base64']  # Из OpenAI!
     
-    if image_url and 'drive.google.com' in image_url:
-        print("🔗 Google Drive")
-        image_bytes = download_google_drive(image_url)
-        tilda_image_url = upload_image_to_tilda_raw(image_bytes)
-    else:
-        print("🖼️ Base64")
-        image_b64 = data['image_base64']
-        tilda_image_url = upload_image_to_tilda(image_b64)
+    # 1. Base64 → Cloudinary
+    print("☁️ Uploading to Cloudinary...")
+    image_bytes = base64.b64decode(image_b64)
+    cloudinary_url = upload_to_cloudinary(image_bytes)
+    print(f"☁️ CDN: {cloudinary_url}")
     
-    if not tilda_image_url:
-        return jsonify({"error": "❌ Image upload failed", "debug": "Check logs"}), 400
-    
-    result = create_tilda_article(title, content, tilda_image_url)
+    # 2. Cloudinary → Тильда postadd
+    result = create_tilda_article(title, content, cloudinary_url)
     
     return jsonify({
         "success": True,
         "tilda_url": result.get("result", {}).get("url", ""),
-        "image_url": tilda_image_url
+        "image_cdn": cloudinary_url
     })
+
+def create_tilda_article(title, content_html, image_url):
+    """Тильда postadd"""
+    url = f"https://api.tildacdn.info/v1/postadd?publickey={TILDA_PUBLIC_KEY}&secretkey={TILDA_SECRET_KEY}"
+    payload = {
+        "projectid": TILDA_PROJECT_ID,
+        "title": title,
+        "content": content_html,
+        "img": image_url,
+        "published": "1"
+    }
+    resp = requests.post(url, json=payload)
+    print(f"[TILDA] postadd: {resp.status_code}")
+    return resp.json()
 
 @app.route('/ping', methods=['GET'])
 def ping():
-    return jsonify({"status": "🚀 OK", "keys": bool(TILDA_PUBLIC_KEY)})
+    return jsonify({"status": "🚀 Cloudinary + Tilda ready!"})
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port)
